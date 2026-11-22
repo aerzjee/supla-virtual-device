@@ -18,7 +18,16 @@
 
 #include "devconnection.h"
 
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/sysinfo.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "channel-io.h"
@@ -38,7 +47,10 @@ typedef struct {
 
   struct timeval last_call;
   unsigned char server_activity_timeout;
+  time_t connection_start_time;
 } TDeviceConnectionData;
+
+void devconnection_send_all_channel_states(TDeviceConnectionData *dcd);
 
 int devconnection_socket_read(void *buf, int count, void *dcd) {
   return ssocket_read(((TDeviceConnectionData *)dcd)->ssd, NULL, buf, count);
@@ -119,6 +131,7 @@ void devconnection_on_register_result(
       break;
     case SUPLA_RESULTCODE_TRUE:
       dcd->registered = 1;
+      dcd->connection_start_time = time(NULL);
       dcd->server_activity_timeout = register_device_result->activity_timeout;
 
       channelio_setcalback_on_channel_value_changed(
@@ -127,6 +140,8 @@ void devconnection_on_register_result(
 
       supla_write_state_file(scfg_string(CFG_STATE_FILE), LOG_DEBUG,
                              "Registered and ready.");
+
+      devconnection_send_all_channel_states(dcd);
 
       break;
     case SUPLA_RESULTCODE_DEVICE_DISABLED:
@@ -181,6 +196,138 @@ void devconnection_channel_set_value(TDeviceConnectionData *dcd,
                                    new_value->SenderID, Success);
 }
 
+#ifndef IFNAMSIZ
+#define IFNAMSIZ 16
+#endif
+
+static void devconnection_get_ip_mac(void *ssd, in_addr_t *out_ip,
+                                     unsigned char out_mac[6]) {
+  *out_ip = 0;
+  memset(out_mac, 0, 6);
+
+  int fd = ssocket_get_fd(ssd);
+  in_addr_t sock_ip = 0;
+  if (fd >= 0) {
+    struct sockaddr_in sin;
+    socklen_t len = sizeof(sin);
+    if (getsockname(fd, (struct sockaddr *)&sin, &len) == 0 &&
+        sin.sin_family == AF_INET) {
+      sock_ip = sin.sin_addr.s_addr;
+      *out_ip = sock_ip;
+    }
+  }
+
+  struct ifaddrs *ifap = NULL;
+  if (getifaddrs(&ifap) != 0 || ifap == NULL) {
+    return;
+  }
+
+  int found_mac = 0;
+  if (sock_ip != 0) {
+    for (struct ifaddrs *ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+      if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
+        struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+        if (sa->sin_addr.s_addr == sock_ip) {
+          int sock = socket(AF_INET, SOCK_DGRAM, 0);
+          if (sock >= 0) {
+            struct ifreq ifr;
+            memset(&ifr, 0, sizeof(ifr));
+            strncpy(ifr.ifr_name, ifa->ifa_name, IFNAMSIZ - 1);
+            if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
+              memcpy(out_mac, ifr.ifr_hwaddr.sa_data, 6);
+              found_mac = 1;
+            }
+            close(sock);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (!found_mac) {
+    for (struct ifaddrs *ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+      if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
+        if (strcmp(ifa->ifa_name, "lo") != 0) {
+          struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+          if (*out_ip == 0) {
+            *out_ip = sa->sin_addr.s_addr;
+          }
+          int sock = socket(AF_INET, SOCK_DGRAM, 0);
+          if (sock >= 0) {
+            struct ifreq ifr;
+            memset(&ifr, 0, sizeof(ifr));
+            strncpy(ifr.ifr_name, ifa->ifa_name, IFNAMSIZ - 1);
+            if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
+              memcpy(out_mac, ifr.ifr_hwaddr.sa_data, 6);
+              found_mac = 1;
+            }
+            close(sock);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  freeifaddrs(ifap);
+}
+
+static void devconnection_fill_device_state(TDeviceConnectionData *dcd,
+                                            TDSC_ChannelState *state) {
+  in_addr_t ip = 0;
+  unsigned char mac[6] = {0};
+  devconnection_get_ip_mac(dcd->ssd, &ip, mac);
+  if (ip != 0) {
+    state->IPv4 = ip;
+    state->Fields |= SUPLA_CHANNELSTATE_FIELD_IPV4;
+  }
+  char has_mac = 0;
+  for (int i = 0; i < 6; i++) {
+    if (mac[i] != 0) {
+      has_mac = 1;
+      break;
+    }
+  }
+  if (has_mac) {
+    memcpy(state->MAC, mac, 6);
+    state->Fields |= SUPLA_CHANNELSTATE_FIELD_MAC;
+  }
+
+  struct sysinfo si;
+  if (sysinfo(&si) == 0) {
+    state->Uptime = (unsigned int)si.uptime;
+    state->Fields |= SUPLA_CHANNELSTATE_FIELD_UPTIME;
+  }
+
+  if (dcd->connection_start_time > 0) {
+    time_t now = time(NULL);
+    if (now >= dcd->connection_start_time) {
+      state->ConnectionUptime =
+          (unsigned int)(now - dcd->connection_start_time);
+      state->Fields |= SUPLA_CHANNELSTATE_FIELD_CONNECTIONUPTIME;
+    }
+  }
+}
+
+void devconnection_send_all_channel_states(TDeviceConnectionData *dcd) {
+  if (dcd == NULL || dcd->srpc == NULL || dcd->registered != 1) return;
+
+  int count = channelio_channel_count();
+  for (int a = 0; a < count; a++) {
+    unsigned char ch_num = channelio_get_channel_number(a);
+    TDSC_ChannelState state;
+    memset(&state, 0, sizeof(TDSC_ChannelState));
+    state.ReceiverID = 0;
+    state.ChannelNumber = ch_num;
+
+    channelio_get_channel_state(ch_num, &state);
+    devconnection_fill_device_state(dcd, &state);
+
+    srpc_csd_async_channel_state_result(dcd->srpc, &state);
+  }
+}
+
 void devconnection_channel_get_channel_state(
     TDeviceConnectionData *dcd, TCSD_ChannelStateRequest *request) {
   TDSC_ChannelState state;
@@ -189,6 +336,7 @@ void devconnection_channel_get_channel_state(
   state.ChannelNumber = request->ChannelNumber;
 
   channelio_get_channel_state(request->ChannelNumber, &state);
+  devconnection_fill_device_state(dcd, &state);
 
   srpc_csd_async_channel_state_result(dcd->srpc, &state);
 }
@@ -223,6 +371,7 @@ void devconnection_on_remote_call_received(void *_srpc, unsigned int rr_id,
       case SUPLA_SD_CALL_DEVICE_CALCFG_REQUEST:
         devconnection_channel_calcfg_request(dcd,
                                              rd.data.sd_device_calcfg_request);
+        break;
 
       case SUPLA_CSD_CALL_GET_CHANNEL_STATE:
         devconnection_channel_get_channel_state(
@@ -269,7 +418,7 @@ void devconnection_register(TDeviceConnectionData *dcd) {
              scfg_string(CFG_DEVNAME));
     snprintf(srd.ServerName, SUPLA_SERVER_NAME_MAXSIZE, "%s",
              scfg_string(CFG_SERVER_HOST));
-    snprintf(srd.SoftVer, SUPLA_SOFTVER_MAXSIZE, "1.0");
+    snprintf(srd.SoftVer, SUPLA_SOFTVER_MAXSIZE, "%s", SOFTWARE_VERSION);
 
     memcpy(srd.GUID, DEVICE_GUID, SUPLA_GUID_SIZE);
     memcpy(srd.AuthKey, DEVICE_AUTHKEY, SUPLA_AUTHKEY_SIZE);
@@ -329,6 +478,7 @@ void devconnection_execute(void *user_data, void *sthread) {
         eh_add_fd(eh, ssocket_get_fd(dcd.ssd));
 
         dcd.registered = 0;
+        dcd.connection_start_time = 0;
 
         while (devconnection_isterminated(sthread) == 0) {
           if (dcd.registered == 0) {
@@ -361,6 +511,7 @@ void devconnection_execute(void *user_data, void *sthread) {
           supla_write_state_file(scfg_string(CFG_STATE_FILE), LOG_DEBUG,
                                  "Disconnected");
         }
+        dcd.connection_start_time = 0;
 
         srpc_free(dcd.srpc);
         eh_free(eh);

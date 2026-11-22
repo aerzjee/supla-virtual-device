@@ -409,6 +409,13 @@ void channelio_channel_init(void) {
 
 int channelio_channel_count(void) { return channels->getChannelCount(); }
 
+unsigned char channelio_get_channel_number(int idx) {
+  if (channels == NULL) return 0;
+  client_device_channel *channel = channels->getChannel(idx);
+  if (channel) return channel->getNumber();
+  return 0;
+}
+
 void channelio_set_file_write_check(unsigned char number, int value) {
   if (channels == NULL) return;
   client_device_channel *channel = channels->find_channel(number);
@@ -723,8 +730,7 @@ void channelio_channels_to_srd_c(unsigned char *channel_count,
       chnl[a].Type = channel->getType();
       chnl[a].Default = channel->getFunction();
 
-      if (channel->isBatteryPowered())
-        chnl[a].Flags |= SUPLA_CHANNEL_FLAG_CHANNELSTATE;
+      chnl[a].Flags |= SUPLA_CHANNEL_FLAG_CHANNELSTATE;
 
       channel->getValue(chnl[a].value);
     }

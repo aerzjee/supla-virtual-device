@@ -38,6 +38,7 @@ char channelio_init(void);
 void channelio_free(void);
 void channelio_channel_init(void);
 int channelio_channel_count(void);
+unsigned char channelio_get_channel_number(int idx);
 int channelio_get_type(unsigned char number);
 int channelio_get_function(unsigned char number);
 
