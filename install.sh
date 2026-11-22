@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 cd "$(dirname "$0")"
 
@@ -15,9 +15,9 @@ for dir in src/supla-dev/src/supla-client-lib; do
     (cd "$dir" && for f in *; do
       if [ -f "$f" ] && [ ! -L "$f" ]; then
         target=$(cat "$f" 2>/dev/null)
-        if [[ "$target" == ../* ]]; then
-          ln -sf "$target" "$f"
-        fi
+        case "$target" in
+          ../*) ln -sf "$target" "$f" ;;
+        esac
       fi
     done)
   fi
@@ -31,11 +31,11 @@ if [ ! -f supla-virtual-device ] && [ ! -L supla-virtual-device ]; then
   ln -sf src/supla-dev/Release/supla-virtual-device supla-virtual-device
 fi
 
-echo -e "${GREEN}OK!${NC}"
+printf "${GREEN}OK!${NC}\n"
 ./supla-virtual-device -v
 
 if [ ! -f supla-virtual-device.cfg ]; then
   cp supla-virtual-device.cfg.sample supla-virtual-device.cfg
-  echo -e "${YELLOW}Sample configuration has been created for you (${NC}supla-virtual-device.cfg${YELLOW})${NC}"
-  echo -e "${YELLOW}Adjust it to your needs before launching.${NC}"
+  printf "${YELLOW}Sample configuration has been created for you (${NC}supla-virtual-device.cfg${YELLOW})${NC}\n"
+  printf "${YELLOW}Adjust it to your needs before launching.${NC}\n"
 fi

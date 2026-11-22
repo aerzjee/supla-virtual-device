@@ -35,10 +35,21 @@ and description should help.
 
 # Installation
 
-```
+### Debian / Ubuntu / Raspberry Pi OS
+
+```bash
 sudo apt-get update
 sudo apt-get install -y git libssl-dev build-essential curl
-git clone https://github.com/lukbek/supla-virtual-device.git
+git clone https://github.com/aerzjee/supla-virtual-device.git
+cd supla-virtual-device
+./install.sh
+```
+
+### Alpine Linux / Docker
+
+```sh
+apk add --no-cache git build-base openssl-dev linux-headers
+git clone https://github.com/aerzjee/supla-virtual-device.git
 cd supla-virtual-device
 ./install.sh
 ```
