@@ -1,2 +1,2 @@
-/mqtt/
-/supla-client-lib/
+*.o
+*.d
