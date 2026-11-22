@@ -25,7 +25,7 @@ done
 
 echo "Building. Be patient."
 
-(cd src/supla-dev/Release && make all >/dev/null 2>&1 && cd ../../..) || exit 1
+(cd src/supla-dev/Release && make clean >/dev/null 2>&1 && make all >/dev/null 2>&1 && cd ../../..) || exit 1
 
 if [ ! -f supla-virtual-device ] && [ ! -L supla-virtual-device ]; then
   ln -sf src/supla-dev/Release/supla-virtual-device supla-virtual-device
