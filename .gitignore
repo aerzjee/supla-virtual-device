@@ -1,3 +1,13 @@
 supla-virtual-device
-src/
 *.cfg
+var/dev_guid
+var/last_state.txt
+var/*.log
+*.o
+*.d
+*.a
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp

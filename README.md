@@ -15,12 +15,12 @@ e.g. RaspberryPi or any Raspberry-like creation, VPS, your laptop etc.
 
 # Supported sensors
 
+* `GENERAL` - sends a single floating-point value to the [general purpose measurement channel type (GPM / KPOP)](https://forum.supla.org/viewtopic.php?f=17&t=5225) (unit, multiplier, divider, and precision are configurable in SUPLA Cloud)
 * `TEMPERATURE` - sends a value from file as a temperature
 * `TEMPERATURE_AND_HUMIDITY` - sends two values for a temperature and humidity 
 * `DISTANCESENSOR`, `PRESSURESENSOR`, `RAINSENSOR`, `WEIGHTSENSOR`, `WINDSENSOR`, `DEPTHSENSOR` - send a value from file pretending to be the corresponding sensor
 * `GATEWAYSENSOR`, `GATESENSOR`, `GARAGE_DOOR_SENSOR`, `NOLIQUID`, `DOORLOCKSENSOR`, `WINDOWSENSOR` - sends a 0/1 value from file to SUPLA 
 * **SOMEDAY**: `HUMIDITY` - sends a single value as a humidity (no corresponding hardware, but does not display any unit in the SUPLA app)
-* **SOMEDAY**: `GENERAL` - sends a single value to the [general purpose measurement channel type](https://forum.supla.org/viewtopic.php?f=17&t=5225) (to be released in the next upcoming SUPLA release)
 * **SOMEDAY**: `IC_ELECTRICITY_METER`, `IC_GAS_METER`, `IC_WATER_METER`
 
 Do not be mistaken that it can send only temperature and humidity values. It can be anything (see examples below).

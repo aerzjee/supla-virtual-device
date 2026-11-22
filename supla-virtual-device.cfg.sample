@@ -56,4 +56,15 @@ payload_off=false
 function=WINDSENSOR
 state_topic=sensors/wind/0/state
 
+# example of general purpose measurement (GPM) from file
+[CHANNEL_6]
+function=GENERAL
+file=/home/pi/supla-virtual-device/var/general_measurement.txt
+min_interval_sec=30
+
+# example of general purpose measurement (GPM) from MQTT
+[CHANNEL_7]
+function=GENERAL
+state_topic=sensors/custom/value
+
 # this is a comment
